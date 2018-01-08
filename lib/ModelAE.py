@@ -40,13 +40,20 @@ class ModelAE:
         self.decoder_B.save_weights(self.model_dir + decoder_BH5)
         print('saved model weights')
 
+random_transform_args = {
+    'rotation_range': 10,
+    'zoom_range': 0.05,
+    'shift_range': 0.05,
+    'random_flip': 0.4,
+}
+
 class TrainerAE():
     BATCH_SIZE = 64
 
     def __init__(self, model, fn_A, fn_B):
         self.model = model
-        self.images_A = minibatchAB(fn_A, self.BATCH_SIZE)
-        self.images_B = minibatchAB(fn_B, self.BATCH_SIZE)
+        self.images_A = minibatchAB(fn_A, self.BATCH_SIZE, random_transform_args)
+        self.images_B = minibatchAB(fn_B, self.BATCH_SIZE, random_transform_args)
 
     def train_one_step(self, iter):
         epoch, warped_A, target_A = next(self.images_A)

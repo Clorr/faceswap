@@ -34,8 +34,14 @@ class ConvertImage(DirectoryProcessor):
 
     def process(self):
         # Original model goes with Adjust or Masked converter
-        model_name = "Original" # TODO Pass as argument
-        conv_name = "Masked" # TODO Pass as argument
+        # GAN converter & model must go together
+        model_name = "GAN" # TODO Pass as argument
+        conv_name = "GAN" # TODO Pass as argument
+
+        if conv_name.startswith("GAN"):
+            assert model_name.startswith("GAN") is True, "GAN converter can only be used with GAN model!"
+        else:
+            assert model_name.startswith("GAN") is False, "GAN model can only be used with GAN converter!"
 
         model = PluginLoader.get_model(model_name)(self.arguments.model_dir)
         if not model.load(self.arguments.swap_model):

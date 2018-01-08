@@ -89,7 +89,7 @@ class TrainingProcessor(object):
         thr.join() # waits until thread finishes
     
     def processThread(self):
-        variant = "Original" # TODO Pass as argument
+        variant = "GAN" # TODO Pass as argument
         
         print('Loading data, this may take a while...')
         model = PluginLoader.get_model(variant)(self.arguments.model_dir)
@@ -122,7 +122,11 @@ class TrainingProcessor(object):
             exit(0)
 
     def show(self, image_gen):
-        if self.arguments.preview:
-            cv2.imshow('', image_gen())
-        elif self.arguments.write_image:
-            cv2.imwrite('_sample.jpg', image_gen())
+        try:
+            if self.arguments.preview:
+                cv2.imshow('', image_gen())
+            elif self.arguments.write_image:
+                cv2.imwrite('_sample.jpg', image_gen())
+        except Exception as e:
+            print("could not preview sample")
+            print(e)
