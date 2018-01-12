@@ -3,99 +3,141 @@ import cv2
 import numpy as np
 
 from lib.training_data import minibatchAB
-from .Trainable import Trainable
-
-display_iters = 50
-niter = 150
-
-random_transform_args = {
-    'rotation_range': 20,
-    'zoom_range': 0.1,
-    'shift_range': 0.05,
-    'random_flip': 0.5,
-    }
 
 class Trainer():
-    BATCH_SIZE = 32
-
-    errGA_sum = errGB_sum = errDA_sum = errDB_sum = 0
-    gen_iterations = 0
-
-    def __init__(self, model, fn_A, fn_B):
+    random_transform_args = {
+        'rotation_range': 20,
+        'zoom_range': 0.05,
+        'shift_range': 0.05,
+        'random_flip': 0.5,
+        }
+    def __init__(self, model, fn_A, fn_B, batch_size=8):
         self.model = model
-        self.images_A = minibatchAB(fn_A, self.BATCH_SIZE, random_transform_args)
-        self.images_B = minibatchAB(fn_B, self.BATCH_SIZE, random_transform_args)
-
-        self.trainer_A = Trainable(model.netGA, model.netDA, model.IMAGE_SHAPE)
-        self.trainer_B = Trainable(model.netGB, model.netDB, model.IMAGE_SHAPE)
-
-    def train_one_step(self, iter):
-        epoch, warped_A, target_A = next(self.images_A)
-        epoch, warped_B, target_B = next(self.images_B)
-
-        # Train dicriminators for one batch
-        if iter % 1 == 0:
-            errDA = self.trainer_A.trainD([warped_A, target_A])
-            errDB = self.trainer_B.trainD([warped_B, target_B])
-
-        # Train generators for one batch
-        errGA = self.trainer_A.trainG([warped_A, target_A])
-        errGB = self.trainer_B.trainG([warped_B, target_B])
-
-        self.errDA_sum += errDA[0]
-        self.errDB_sum += errDB[0]
-        self.errGA_sum += errGA[0]
-        self.errGB_sum += errGB[0]
+        self.train_batchA = minibatchAB(fn_A, batch_size, self.random_transform_args)
+        self.train_batchB = minibatchAB(fn_B, batch_size, self.random_transform_args)
+        self.batch_size = batch_size
         
-        if self.gen_iterations % display_iters == 0:
-            print("[%s] [%d/%d][%d] Loss_DA: %f Loss_DB: %f Loss_GA: %f Loss_GB: %f" % (time.strftime("%H:%M:%S"), iter, niter, self.gen_iterations, self.errDA_sum/display_iters, self.errDB_sum/display_iters, self.errGA_sum/display_iters, self.errGB_sum/display_iters))
-            errGA_sum = errGB_sum = errDA_sum = errDB_sum = 0
-        elif self.gen_iterations % 5 == 0:
-            print("[%s] Working..." % time.strftime("%H:%M:%S"))
+        self.use_mixup = True
+        self.mixup_alpha = 0.2
+    
+    def train_one_step(self, iter, viewer):
+        # ---------------------
+        #  Train Discriminators
+        # ---------------------
 
-        self.gen_iterations += 1
+        # Select a random half batch of images
+        epoch, warped_A, target_A = next(self.train_batchA) 
+        epoch, warped_B, target_B = next(self.train_batchB) 
 
-        return lambda: self.show_sample()
+        # Generate a half batch of new images
+        gen_alphasA, gen_imgsA = self.model.netGA.predict(warped_A)
+        gen_alphasB, gen_imgsB = self.model.netGB.predict(warped_B)
+        #gen_masked_imgsA = gen_alphasA * gen_imgsA + (1 - gen_alphasA) * warped_A
+        #gen_masked_imgsB = gen_alphasB * gen_imgsB + (1 - gen_alphasB) * warped_B
+        gen_masked_imgsA = np.array([gen_alphasA[i] * gen_imgsA[i] + (1 - gen_alphasA[i]) * warped_A[i] 
+                                     for i in range(self.batch_size)])
+        gen_masked_imgsB = np.array([gen_alphasB[i] * gen_imgsB[i] + (1 - gen_alphasB[i]) * warped_B[i]
+                                     for i in range (self.batch_size)])
 
-    def show_sample(self):
-        # get new batch of images and generate results for visualization
-        _, wA, tA = self.images_A.send(14)
-        _, wB, tB = self.images_B.send(14)
-        self.showG(tA, tB, self.trainer_A.path, self.trainer_B.path)
-        self.showG_mask(tA, tB, self.trainer_A.path_mask, self.trainer_B.path_mask)
+        valid = np.ones((self.batch_size, ) + self.model.netDA.output_shape[1:])
+        fake = np.zeros((self.batch_size, ) + self.model.netDA.output_shape[1:])
 
-    def showG(self, test_A, test_B, path_A, path_B):
+        concat_real_inputA = np.array([np.concatenate([target_A[i], warped_A[i]], axis=-1) 
+                                       for i in range(self.batch_size)])
+        concat_real_inputB = np.array([np.concatenate([target_B[i], warped_B[i]], axis=-1) 
+                                       for i in range(self.batch_size)])
+        concat_fake_inputA = np.array([np.concatenate([gen_masked_imgsA[i], warped_A[i]], axis=-1) 
+                                       for i in range(self.batch_size)])
+        concat_fake_inputB = np.array([np.concatenate([gen_masked_imgsB[i], warped_B[i]], axis=-1) 
+                                       for i in range(self.batch_size)])
+        if self.use_mixup:
+            lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+            mixup_A = lam * concat_real_inputA + (1 - lam) * concat_fake_inputA
+            mixup_B = lam * concat_real_inputB + (1 - lam) * concat_fake_inputB
+
+        # Train the discriminators
+        #print ("Train the discriminators.")
+        if self.use_mixup:
+            d_lossA = self.model.netDA.train_on_batch(mixup_A, lam * valid)
+            d_lossB = self.model.netDB.train_on_batch(mixup_B, lam * valid)
+        else:
+            d_lossA = self.model.netDA.train_on_batch(np.concatenate([concat_real_inputA, concat_fake_inputA], axis=0), 
+                                                np.concatenate([valid, fake], axis=0))
+            d_lossB = self.model.netDB.train_on_batch(np.concatenate([concat_real_inputB, concat_fake_inputB], axis=0),
+                                                np.concatenate([valid, fake], axis=0))
+
+        # ---------------------
+        #  Train Generators
+        # ---------------------
+
+        # Train the generators
+        #print ("Train the generators.")
+        g_lossA = self.model.adversarial_autoencoderA.train_on_batch(warped_A, [target_A, valid])
+        g_lossB = self.model.adversarial_autoencoderB.train_on_batch(warped_B, [target_B, valid])            
+        
+        print('[%s] [%d/%s][%d] Loss_DA: %f Loss_DB: %f Loss_GA: %f Loss_GB: %f'
+              % (time.strftime("%H:%M:%S"), epoch, "num_epochs", iter, d_lossA[0], d_lossB[0], g_lossA[0], g_lossB[0]))
+        
+        if viewer is not None:
+            self.show_sample(viewer)
+    
+    def show_sample(self, display_fn):
+        _, wA, tA = self.train_batchA.send(14)  
+        _, wB, tB = self.train_batchB.send(14)
+        self.showG(tA, tB, display_fn)
+
+    def showG(self, test_A, test_B, display_fn):
+        def display_fig(figure_A, figure_B):
+            figure = np.concatenate([figure_A, figure_B], axis=0 )
+            figure = figure.reshape((4,7) + figure.shape[1:])
+            figure = stack_images(figure)
+            figure = np.clip((figure + 1) * 255 / 2, 0, 255).astype('uint8')
+            figure = cv2.cvtColor(figure, cv2.COLOR_BGR2RGB)
+            display_fn(Image.fromarray(figure)) 
+
+        out_test_A_netGA = self.model.netGA.predict(test_A)
+        out_test_A_netGB = self.model.netGB.predict(test_A)
+        out_test_B_netGA = self.model.netGA.predict(test_B)
+        out_test_B_netGB = self.model.netGB.predict(test_B)
+
         figure_A = np.stack([
             test_A,
-            np.squeeze(np.array([path_A([test_A[i:i+1]]) for i in range(test_A.shape[0])])),
-            np.squeeze(np.array([path_B([test_A[i:i+1]]) for i in range(test_A.shape[0])])),
+            out_test_A_netGA[0] * out_test_A_netGA[1] + (1 - out_test_A_netGA[0]) * test_A,
+            out_test_A_netGB[0] * out_test_A_netGB[1] + (1 - out_test_A_netGB[0]) * test_A,
             ], axis=1 )
         figure_B = np.stack([
             test_B,
-            np.squeeze(np.array([path_B([test_B[i:i+1]]) for i in range(test_B.shape[0])])),
-            np.squeeze(np.array([path_A([test_B[i:i+1]]) for i in range(test_B.shape[0])])),
+            out_test_B_netGB[0] * out_test_B_netGB[1] + (1 - out_test_B_netGB[0]) * test_B,
+            out_test_B_netGA[0] * out_test_B_netGA[1] + (1 - out_test_B_netGA[0]) * test_B,
             ], axis=1 )
-
-        figure = np.concatenate([figure_A, figure_B], axis=0 )
-        figure = figure.reshape((4,7) + figure.shape[1:])
-        figure = stack_images(figure)
-        figure = np.clip((figure + 1) * 255 / 2, 0, 255).astype('uint8')
-        return cv2.cvtColor(figure, cv2.COLOR_BGR2RGB)
         
-    def showG_mask(self, test_A, test_B, path_A, path_B):
+        print ("Masked results:")
+        display_fig(figure_A, figure_B)   
+
         figure_A = np.stack([
             test_A,
-            (np.squeeze(np.array([path_A([test_A[i:i+1]]) for i in range(test_A.shape[0])])))*2-1,
-            (np.squeeze(np.array([path_B([test_A[i:i+1]]) for i in range(test_A.shape[0])])))*2-1,
+            out_test_A_netGA[1],
+            out_test_A_netGB[1],
             ], axis=1 )
         figure_B = np.stack([
             test_B,
-            (np.squeeze(np.array([path_B([test_B[i:i+1]]) for i in range(test_B.shape[0])])))*2-1,
-            (np.squeeze(np.array([path_A([test_B[i:i+1]]) for i in range(test_B.shape[0])])))*2-1,
+            out_test_B_netGB[1],
+            out_test_B_netGA[1],
             ], axis=1 )
+        
+        print ("Raw results:")
+        display_fig(figure_A, figure_B)       
 
-        figure = np.concatenate([figure_A, figure_B], axis=0 )
-        figure = figure.reshape((4,7) + figure.shape[1:])
-        figure = stack_images(figure)
-        figure = np.clip((figure + 1) * 255 / 2, 0, 255).astype('uint8')
-        return cv2.cvtColor(figure, cv2.COLOR_BGR2RGB)
+        figure_A = np.stack([
+            test_A,
+            np.tile(out_test_A_netGA[0],3) * 2 - 1,
+            np.tile(out_test_A_netGB[0],3) * 2 - 1,
+            ], axis=1 )
+        figure_B = np.stack([
+            test_B,
+            np.tile(out_test_B_netGB[0],3) * 2 - 1,
+            np.tile(out_test_B_netGA[0],3) * 2 - 1,
+            ], axis=1 )
+        print ("Alpha masks:")
+
+        display_fig(figure_A, figure_B)

@@ -104,11 +104,12 @@ class TrainingProcessor(object):
 
             for epoch in range(1, 1000000): # Note starting at 1 may change behavior of tests on "epoch % n == 0"
 
-                sample_gen = trainer.train_one_step(epoch)
+                save_iteration = epoch % self.arguments.save_interval == 0
 
-                if epoch % self.arguments.save_interval == 0:
+                trainer.train_one_step(epoch, self.show if save_iteration else None)
+
+                if save_iteration:
                     model.save_weights()
-                    self.show(sample_gen)
 
                 if self.stop:
                     model.save_weights()
@@ -121,12 +122,12 @@ class TrainingProcessor(object):
                 print('Saving model weights has been cancelled!')
             exit(0)
 
-    def show(self, image_gen):
+    def show(self, image):
         try:
             if self.arguments.preview:
-                cv2.imshow('', image_gen())
+                cv2.imshow('', image)
             elif self.arguments.write_image:
-                cv2.imwrite('_sample.jpg', image_gen())
+                cv2.imwrite('_sample.jpg', image) #TODO when trainer wants to show multiple images, each call overwrites the previous
         except Exception as e:
             print("could not preview sample")
             print(e)

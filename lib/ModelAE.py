@@ -63,9 +63,10 @@ class TrainerAE():
         loss_B = self.model.autoencoder_B.train_on_batch(warped_B, target_B)
         print("[%s] [#%d] loss_A: %f, loss_B: %f"  % (time.strftime("%H:%M:%S"), iter, loss_A, loss_B))
 
-        return lambda: self.show_sample(target_A[0:14], target_B[0:14])
+        if viewer is not None:
+            self.show_sample(target_A[0:14], target_B[0:14], viewer)
 
-    def show_sample(self, test_A, test_B):
+    def show_sample(self, test_A, test_B, display_fn):
         figure_A = numpy.stack([
             test_A,
             self.model.autoencoder_A.predict(test_A),
@@ -81,4 +82,4 @@ class TrainerAE():
         figure = figure.reshape((4, 7) + figure.shape[1:])
         figure = stack_images(figure)
 
-        return numpy.clip(figure * 255, 0, 255).astype('uint8')
+        display_fn(numpy.clip(figure * 255, 0, 255).astype('uint8'))
