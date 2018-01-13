@@ -168,7 +168,7 @@ class GANModel():
         if swapped:
             print("swapping not supported on GAN")
             # TODO load is done in __init__ => look how to swap if possible
-        pass
+        return True
     
     def save_weights(self):
         self.netGA.save_weights(self.model_dir + netGAH5)
