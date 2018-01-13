@@ -65,7 +65,7 @@ class GANModel():
 
     def converter(self, swap):
         predictor = self.netGB if not swap else self.netGA
-        return lambda img: predictor.predict(img)
+        return lambda img: predictor.predict(img)[1] #Warning! GAN converter returns an image + a mask TODO handle mask in convert!
 
     def build_generator(self):
         def conv_block(input_tensor, f):
