@@ -122,12 +122,12 @@ class TrainingProcessor(object):
                 print('Saving model weights has been cancelled!')
             exit(0)
 
-    def show(self, image):
+    def show(self, image, name=''):
         try:
             if self.arguments.preview:
-                cv2.imshow('', image)
+                cv2.imshow(name, image)
             elif self.arguments.write_image:
-                cv2.imwrite('_sample.jpg', image) #TODO when trainer wants to show multiple images, each call overwrites the previous
+                cv2.imwrite('_sample_{}.jpg'.format(name), image)
         except Exception as e:
             print("could not preview sample")
             print(e)

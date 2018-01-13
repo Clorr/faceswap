@@ -88,7 +88,7 @@ class Trainer():
         self.showG(tA, tB, display_fn)
 
     def showG(self, test_A, test_B, display_fn):
-        def display_fig(figure_A, figure_B):
+        def display_fig(name, figure_A, figure_B):
             figure = np.concatenate([figure_A, figure_B], axis=0 )
             columns = 4
             elements = figure.shape[0]
@@ -96,7 +96,7 @@ class Trainer():
             figure = stack_images(figure)
             figure = np.clip((figure + 1) * 255 / 2, 0, 255).astype('uint8')
             figure = cv2.cvtColor(figure, cv2.COLOR_BGR2RGB)
-            display_fn(figure) 
+            display_fn(figure, name)
 
         out_test_A_netGA = self.model.netGA.predict(test_A)
         out_test_A_netGB = self.model.netGB.predict(test_A)
@@ -114,8 +114,7 @@ class Trainer():
             out_test_B_netGA[0] * out_test_B_netGA[1] + (1 - out_test_B_netGA[0]) * test_B,
             ], axis=1 )
         
-        print ("Masked results:")
-        display_fig(figure_A, figure_B)   
+        display_fig("masked", figure_A, figure_B)
 
         figure_A = np.stack([
             test_A,
@@ -128,8 +127,7 @@ class Trainer():
             out_test_B_netGA[1],
             ], axis=1 )
         
-        print ("Raw results:")
-        display_fig(figure_A, figure_B)       
+        display_fig("raw", figure_A, figure_B)       
 
         figure_A = np.stack([
             test_A,
@@ -141,6 +139,5 @@ class Trainer():
             np.tile(out_test_B_netGB[0],3) * 2 - 1,
             np.tile(out_test_B_netGA[0],3) * 2 - 1,
             ], axis=1 )
-        print ("Alpha masks:")
 
-        display_fig(figure_A, figure_B)
+        display_fig("alpha_masks", figure_A, figure_B)
