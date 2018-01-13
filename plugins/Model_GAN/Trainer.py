@@ -2,7 +2,7 @@ import time
 import cv2
 import numpy as np
 
-from lib.training_data import minibatchAB
+from lib.training_data import minibatchAB, stack_images
 
 class Trainer():
     random_transform_args = {
@@ -12,6 +12,7 @@ class Trainer():
         'random_flip': 0.5,
         }
     def __init__(self, model, fn_A, fn_B, batch_size=8):
+        assert batch_size % 2 == 0, "batch_size must be an even number"
         self.model = model
         self.train_batchA = minibatchAB(fn_A, batch_size, self.random_transform_args)
         self.train_batchB = minibatchAB(fn_B, batch_size, self.random_transform_args)
@@ -82,18 +83,20 @@ class Trainer():
             self.show_sample(viewer)
     
     def show_sample(self, display_fn):
-        _, wA, tA = self.train_batchA.send(14)  
-        _, wB, tB = self.train_batchB.send(14)
+        _, wA, tA = next(self.train_batchA)
+        _, wB, tB = next(self.train_batchB)
         self.showG(tA, tB, display_fn)
 
     def showG(self, test_A, test_B, display_fn):
         def display_fig(figure_A, figure_B):
             figure = np.concatenate([figure_A, figure_B], axis=0 )
-            figure = figure.reshape((4,7) + figure.shape[1:])
+            columns = 4
+            elements = figure.shape[0]
+            figure = figure.reshape((columns,(elements//columns)) + figure.shape[1:])
             figure = stack_images(figure)
             figure = np.clip((figure + 1) * 255 / 2, 0, 255).astype('uint8')
             figure = cv2.cvtColor(figure, cv2.COLOR_BGR2RGB)
-            display_fn(Image.fromarray(figure)) 
+            display_fn(figure) 
 
         out_test_A_netGA = self.model.netGA.predict(test_A)
         out_test_A_netGB = self.model.netGB.predict(test_A)
