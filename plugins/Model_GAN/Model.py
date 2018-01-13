@@ -63,8 +63,8 @@ class GANModel():
                                               loss_weights=[1, 0.5],
                                               optimizer=optimizer)
 
-    def converter(self):
-        self.netGB.predict(test_A)
+    def converter(self, swap):
+        return lambda img: self.netGB.predict(img)
 
     def build_generator(self):
         def conv_block(input_tensor, f):
