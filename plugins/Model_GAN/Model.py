@@ -64,7 +64,8 @@ class GANModel():
                                               optimizer=optimizer)
 
     def converter(self, swap):
-        return lambda img: self.netGB.predict(img)
+        predictor = self.netGB if not swap else self.netGA
+        return lambda img: predictor.predict(img)
 
     def build_generator(self):
         def conv_block(input_tensor, f):
