@@ -63,7 +63,7 @@ class GANModel():
                                               loss_weights=[1, 0.5],
                                               optimizer=optimizer)
 
-    def convert(self):
+    def converter(self):
         self.netGB.predict(test_A)
 
     def build_generator(self):
