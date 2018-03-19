@@ -11,6 +11,7 @@ from keras import backend as K
 
 from .AutoEncoder import AutoEncoder
 from lib.PixelShuffler import PixelShuffler
+from lib.Subpixel import Subpixel
 
 IMAGE_SHAPE = (64, 64, 3)
 ENCODER_DIM = 1024
@@ -52,9 +53,9 @@ class Model(AutoEncoder):
 
     def upscale(self, filters):
         def block(x):
-            x = Conv2D(filters=filters, kernel_size=(1, 1), strides=(1, 1), padding='same', activation='relu')(x)
-            x = Conv2DTranspose(filters=filters, kernel_size=(14, 14), strides=(2, 2), padding='same', activation='relu')(x)
-            x = Conv2D(filters=filters, kernel_size=(1, 1), strides=(1, 1), padding='same', activation='relu')(x)
+            x = Conv2D(filters * 4, kernel_size=3, padding='same')(x)
+            x = LeakyReLU(0.1)(x)
+            x = PixelShuffler()(x)
             return x
         return block
     
@@ -87,8 +88,7 @@ class Model(AutoEncoder):
         x = self.upscale(128)(x)
         x = self.upscale(64)(x)
         x = self.upscale(32)(x)
-        x = self.upscale(16)(x)
-        x = Conv2D(3, kernel_size=5, padding='same', activation='sigmoid')(x)
+        x = Subpixel(3, (1,1), 2, activation='relu')(x)
         x = self.res_block(x, 3)
         x = self.res_block(x, 3)
         x = self.res_block(x, 3)
