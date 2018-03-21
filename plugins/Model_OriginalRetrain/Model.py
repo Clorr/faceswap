@@ -1,25 +1,16 @@
 # Based on the original https://www.reddit.com/r/deepfakes/ code sample + contribs
 
 from keras.models import Model as KerasModel
-from keras.layers import Input, Dense, Flatten, Reshape, add
+from keras.layers import Input, Dense, Flatten, Reshape, add, concatenate
 from keras.layers.advanced_activations import LeakyReLU
-from keras.layers.convolutional import Conv2D, Conv2DTranspose
-from keras.layers import MaxPool2D
+from keras.layers.convolutional import Conv2D
 from keras.optimizers import Adam
-from keras.initializers import RandomNormal
-from keras import backend as K
 
 from .AutoEncoder import AutoEncoder
 from lib.PixelShuffler import PixelShuffler
-from lib.Subpixel import Subpixel
 
 IMAGE_SHAPE = (64, 64, 3)
 ENCODER_DIM = 1024
-
-conv_init = RandomNormal(0, 0.02)
-
-def ground_truth_diff(y_true, y_pred):
-    return K.abs(y_pred - y_true)
 
 class Model(AutoEncoder):
     def initModel(self):
@@ -28,17 +19,21 @@ class Model(AutoEncoder):
 
         encoder = self.encoder
         encoder.trainable = False
-        self.autoencoder_B = KerasModel(x, self.decoder_B(encoder(x)))
+        decoder = self.decoder_B
+        #decoder.trainable = False
+        self.autoencoder_B = KerasModel(x, self.refiner(decoder(encoder(x))))
 
-        #self.autoencoder_B.compile(optimizer=optimizer, loss='mean_absolute_error')
-        self.autoencoder_B.compile(optimizer=optimizer, loss='mse')
+        self.autoencoder_B.compile(optimizer=optimizer, loss='mean_absolute_error')
 
         encoder.summary()
+        decoder.summary()
+        self.refiner.summary()
         self.autoencoder_B.summary()
 
         from keras.utils import plot_model
         plot_model(self.encoder, to_file='_model_encoder.png', show_shapes=True, show_layer_names=True)
         plot_model(self.decoder_B, to_file='_model_decoder_B.png', show_shapes=True, show_layer_names=True)
+        plot_model(self.refiner, to_file='_model_refiner.png', show_shapes=True, show_layer_names=True)
 
     def converter(self, swap):
         autoencoder = self.autoencoder_B
@@ -58,15 +53,6 @@ class Model(AutoEncoder):
             x = PixelShuffler()(x)
             return x
         return block
-    
-    def res_block(self, input_tensor, f):
-        x = input_tensor
-        x = Conv2D(f, kernel_size=3, kernel_initializer=conv_init, use_bias=False, padding="same")(x)
-        x = LeakyReLU(alpha=0.2)(x)
-        x = Conv2D(f, kernel_size=3, kernel_initializer=conv_init, use_bias=False, padding="same")(x)
-        x = add([x, input_tensor])
-        x = LeakyReLU(alpha=0.2)(x)
-        return x
 
     def Encoder(self):
         input_ = Input(shape=IMAGE_SHAPE)
@@ -88,9 +74,11 @@ class Model(AutoEncoder):
         x = self.upscale(128)(x)
         x = self.upscale(64)(x)
         x = self.upscale(32)(x)
-        x = Subpixel(3, (1,1), 2, activation='relu')(x)
-        x = self.res_block(x, 3)
-        x = self.res_block(x, 3)
-        x = self.res_block(x, 3)
-        x = self.res_block(x, 3)
+        x = self.upscale(16)(x)
+        x = Conv2D(3, kernel_size=5, padding='same', activation='sigmoid')(x)
+        return KerasModel(input_, x)
+
+    def Refiner(self):
+        input_ = Input(shape=(256, 256, 3))
+        x = input_
         return KerasModel(input_, x)
