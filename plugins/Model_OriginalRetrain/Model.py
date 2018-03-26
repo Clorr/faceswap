@@ -1,7 +1,7 @@
 # Based on the original https://www.reddit.com/r/deepfakes/ code sample + contribs
 
 from keras.models import Model as KerasModel
-from keras.layers import Input, Dense, Flatten, Reshape, BatchNormalization, Lambda, MaxPool2D, add, concatenate
+from keras.layers import Input, Dense, Flatten, Reshape, BatchNormalization, Lambda, MaxPool2D, add, concatenate, LocallyConnected2D
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import Conv2D, Conv2DTranspose
 from keras.initializers import RandomNormal
@@ -46,7 +46,7 @@ def log10(x):
 
 class Model(AutoEncoder):
     def initModel(self):
-        optimizer = Adam(lr=5e-5, beta_1=0.5, beta_2=0.999)
+        optimizer = Adam(lr=5e-4, beta_1=0.5, beta_2=0.999)
         x = Input(shape=IMAGE_SHAPE)
 
         encoder = self.encoder
@@ -111,35 +111,13 @@ class Model(AutoEncoder):
         return KerasModel(input_, x)
 
     def Refiner(self):
-        #based on DCSCN https://arxiv.org/abs/1707.05425
-        def feat(filters):
-            def block(x):
-                x = Conv2D(filters, kernel_size=3, padding='same')(x)
-                x = LeakyReLU(0.1)(x)
-                return x
-            return block
-
-        def recon(filters, k):
-            def block(x):
-                x = Conv2D(filters, kernel_size=k, padding='same')(x)
-                x = LeakyReLU(0.1)(x)
-                return x
-            return block
         
         input_ = Input(shape=(256, 256, 3))
         x = input_
-        f1 = feat(96)(x)
-        f2 = feat(76)(f1)
-        f3 = feat(65)(f2)
-        f4 = feat(55)(f3)
-        f5 = feat(47)(f4)
-        f6 = feat(39)(f5)
-        f7 = feat(32)(f6)
-        x = concatenate([f1, f2, f3, f4, f5, f6, f7], axis=3)
-        a1 = recon(64, 3)(x)
-        b1 = recon(32, 1)(x)
-        b2 = recon(32, 3)(b1)
-        x = concatenate([a1, b2])
-        x = Conv2D(3, kernel_size=1, padding='same', activation='sigmoid')(x)
-        x = add([x, input_])
+        g = Lambda(K.tf.image.rgb_to_grayscale)(x)
+        g = Lambda(lambda image: K.spatial_2d_padding(image, padding=((1, 1), (1, 1))))(g)
+        g = LocallyConnected2D(32, kernel_size=3, padding='valid', activation = 'relu')(g) # Locally connected eats up a lot of memory. Running on a 256 image is not yet possible
+        g = Conv2D(3, kernel_size=3, padding='same', activation='sigmoid')(g)
+        g = Lambda(lambda image: K.tf.image.resize_images(image, (256, 256)))(g)
+        x = add([g, input_])
         return KerasModel(input_, x)
